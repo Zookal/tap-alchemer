@@ -231,7 +231,7 @@ def sync(config, state={}):
                 data = survey_data.get(k, {})
                 data.update({"survey_id": survey_id,
                              "survey_response_id": resp.get("id", ""),
-                             "survey_question_id": resp.get("id", ""),
+                             "question_id": data.get("id", ""),
                              "response_id": f"{survey_id}_{resp.get('id')}"})
 
                 if "options" in data:
