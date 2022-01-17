@@ -14,7 +14,7 @@ class SchemaSurvey:
     key: list = ["id"]
     schema: dict = {
         "properties": {
-            "id": {'type': 'integer'},
+            "id": {'type': 'string'},
             "team": {'type': 'integer'},
             "type": {'type': 'string'},
             "status": {'type': 'string'},
@@ -29,11 +29,11 @@ class SchemaSurvey:
 
 class SchemaSurveyQuestion:
     stream: str = "survey_question"
-    key: list = ["id"]
+    key: list = ["survey_id", "id"]
     schema: dict = {
         "properties": {
-            "survey_id": {'type': 'integer'},
-            "id": {'type': 'integer'},
+            "survey_id": {'type': 'string'},
+            "id": {'type': 'string'},
             "type": {'type': 'string'},
             "title": {'type': 'object'},
             "base_type": {'type': 'string'},
@@ -54,8 +54,8 @@ class SchemaSurveyResponse:
     schema: dict = {
         "properties": {
             "response_id": {'type': 'string'},
-            "survey_id": {'type': 'integer'},
-            "id": {'type': 'integer'},
+            "survey_id": {'type': 'string'},
+            "id": {'type': 'string'},
             "contact_id": {'type': 'string'},
             "status": {'type': 'string'},
             "is_test_data": {'type': 'integer'},
@@ -80,27 +80,33 @@ class SchemaSurveyResponse:
             "latitude": {'type': 'numeric'},
             "date_submitted": {'type': 'string', "format": "date-time"},
             "date_started": {'type': 'string', "format": "date-time"},
+            "comments": {'type': 'string'},
         }
     }
 
 
 class SchemaSurveyData:
     stream: str = "survey_response_data"
-    key: list = ["response_id"]
+    key: list = ["response_id", "id"]
     schema: dict = {
         "properties": {
             "response_id": {'type': 'string'},
-            "survey_id": {'type': 'integer'},
+            "survey_id": {'type': 'string'},
             "survey_response_id": {'type': 'integer'},
-            "id": {'type': 'integer'},
+            "id": {'type': 'string'},
+            "question_id": {'type': 'string'},
 
-            "answer_id": {'type': 'integer'},
+            "answer_id": {'type': 'string'},
             "section_id": {'type': 'integer'},
 
             "question": {'type': 'string'},
             "answer": {'type': 'string'},
+            "original_answer": {'type': 'string'},
             "type": {'type': 'string'},
             "shown": {'type': 'boolean'},
+            "subquestions": {'type': 'object'},
+            "option": {'type': 'string'},
+            "options": {'type': 'object'},
         }
     }
 
@@ -217,16 +223,31 @@ def sync(config, state={}):
             survey_data = resp["survey_data"]
             resp.pop("survey_data")
 
-            singer.write_record(stream_name=SchemaSurveyResponse.stream, record=resp, time_extracted=extraction_time)
+            singer.write_record(stream_name=SchemaSurveyResponse.stream, record=resp,
+                                time_extracted=extraction_time)
             rows[SchemaSurveyResponse.stream] += 1
 
             for k in survey_data:
                 data = survey_data.get(k, {})
                 data.update({"survey_id": survey_id,
                              "survey_response_id": resp.get("id", ""),
+                             "survey_question_id": resp.get("id", ""),
                              "response_id": f"{survey_id}_{resp.get('id')}"})
-                singer.write_record(stream_name=SchemaSurveyData.stream, record=data, time_extracted=extraction_time)
-                rows[SchemaSurveyData.stream] += 1
+
+                if "options" in data:
+                    for opt in data.get("options"):
+                        data.update({"answer": data.get("options").get(opt).get("answer"),
+                                     "id": data.get("options").get(opt).get("id", data.get("id")),
+                                     "option": data.get("options").get(opt).get("option"),
+                                     })
+
+                        singer.write_record(stream_name=SchemaSurveyData.stream, record=data,
+                                            time_extracted=extraction_time)
+                        rows[SchemaSurveyResponse.stream] += 1
+                else:
+                    singer.write_record(stream_name=SchemaSurveyData.stream, record=data,
+                                        time_extracted=extraction_time)
+                    rows[SchemaSurveyData.stream] += 1
 
     state = singer.write_bookmark(state, SchemaSurveyResponse.stream, "date_submitted", response_state_submitted)
     singer.write_state(state)
